@@ -2,7 +2,8 @@
 name = "aiolibs-executor"
 description = "Asyncio version of concurrent.futures.Executor"
 authors = [
-    {name = "Andrew Svetlov",email = "andrew.svetlov@gmail.com"}
+    {name = "Andrew Svetlov",email = "andrew.svetlov@gmail.com"},
+    {name = "Martin Jurča", email = "martin.jurca@firma.seznam.cz"}
 ]
 readme = "README.md"
 requires-python = ">=3.13"
