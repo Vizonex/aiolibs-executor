@@ -1,15 +1,33 @@
+from __future__ import annotations
+
 import asyncio
-import unittest
-from collections.abc import AsyncIterator
-from contextvars import ContextVar, copy_context
-from typing import Any
 import sys
+import unittest
+from collections.abc import AsyncIterator, Awaitable
+from contextvars import ContextVar, copy_context
+from typing import Any, Callable
+
 from aiolibs_executor import Executor
 
-from async_timeout import timeout
 
-def skip_if_earlier_than_313(reason:str = "Currently Breaks"):
+# TODO (Vizonex) add a requirements-dev.txt file for external 
+# requirements for development and testing
+if sys.version_info < (3, 11):
+    from async_timeout import timeout
+else:
+    from asyncio import timeout
+
+
+def skip_if_earlier_than_313(
+    reason: str = "Currently Breaks",
+) -> Callable[..., Awaitable[None]]:
     return unittest.skipIf(sys.version_info < (3, 13), reason)
+
+
+def skip_if_earlier_than_311(
+    reason: str = "Currently Breaks",
+) -> Callable[..., Awaitable[None]]:
+    return unittest.skipIf(sys.version_info < (3, 11), reason)
 
 
 class BaseTestCase(unittest.IsolatedAsyncioTestCase):
@@ -25,8 +43,7 @@ class BaseTestCase(unittest.IsolatedAsyncioTestCase):
             max_pending=max_pending,
             task_name_prefix=task_name_prefix,
         )
-        # ealier versions of python have problems without the async with implementation
-        # self.addAsyncCleanup(executor.shutdown)
+        self.addAsyncCleanup(executor.shutdown)
         return executor
 
 
@@ -58,6 +75,7 @@ class TestSubmit(BaseTestCase):
 
     async def test_map(self) -> None:
         async with self.make_executor() as executor:
+
             async def f(a: int, b: int) -> int:
                 await asyncio.sleep(0)
                 return a + b
@@ -80,11 +98,12 @@ class TestSubmit(BaseTestCase):
 
             ret = [i async for i in executor.amap(f, inp(), inp())]
             self.assertEqual(ret, [2, 4, 6])
-    
-    @skip_if_earlier_than_313()
+
+    @skip_if_earlier_than_311(
+        "Context Varaibles not supported on 3.10 or earlier"
+    )
     async def test_submit_nowait_default_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -96,10 +115,11 @@ class TestSubmit(BaseTestCase):
             fut = executor.submit_nowait(f(1))
             self.assertEqual(await fut, 2)
 
-    @skip_if_earlier_than_313
+    @skip_if_earlier_than_311(
+        "Context Varaibles not supported on 3.10 or earlier"
+    )
     async def test_submit_nowait_with_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -113,10 +133,11 @@ class TestSubmit(BaseTestCase):
             fut = executor.submit_nowait(f(1), context=context)
             self.assertEqual(await fut, 2)
 
-    @skip_if_earlier_than_313
+    @skip_if_earlier_than_311(
+        "Context Varaibles not supported on 3.10 or earlier"
+    )
     async def test_submit_default_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -128,10 +149,13 @@ class TestSubmit(BaseTestCase):
             fut = await executor.submit(f(1))
             self.assertEqual(await fut, 2)
 
-    @skip_if_earlier_than_313("Eventloop Chokes itself to death")
+    # @unittest.skipIf(sys.version_info < (3, 13), "Not supported"\
+    # " on ealier versions than 3.13""Eventloop Chokes itself to death")
+    @skip_if_earlier_than_311(
+        reason="Contextvar tasks are not supported on 3.11 or older"
+    )
     async def test_submit_with_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -145,10 +169,11 @@ class TestSubmit(BaseTestCase):
             fut = await executor.submit(f(1), context=context)
             self.assertEqual(await fut, 2)
 
-    @skip_if_earlier_than_313
+    @skip_if_earlier_than_311(
+        "Context Varaibles not supported on 3.10 or earlier"
+    )
     async def test_map_default_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -160,10 +185,11 @@ class TestSubmit(BaseTestCase):
             ret = [i async for i in executor.map(f, range(3))]
             self.assertEqual(ret, [1, 2, 3])
 
-    @skip_if_earlier_than_313
+    @skip_if_earlier_than_311(
+        "Context Varaibles not supported on 3.10 or earlier"
+    )
     async def test_map_with_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -177,10 +203,11 @@ class TestSubmit(BaseTestCase):
             ret = [i async for i in executor.map(f, range(3), context=context)]
             self.assertEqual(ret, [1, 2, 3])
 
-    @skip_if_earlier_than_313
+    @skip_if_earlier_than_311(
+        reason="Context Varaibles not supported on 3.10 or earlier"
+    )
     async def test_amap_default_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -197,10 +224,11 @@ class TestSubmit(BaseTestCase):
             ret = [i async for i in executor.amap(f, inp())]
             self.assertEqual(ret, [1, 2, 3])
 
-    @skip_if_earlier_than_313
+    @skip_if_earlier_than_311(
+        reason="Context Varaibles not supported on 3.10 or earlier"
+    )
     async def test_amap_with_context(self) -> None:
         async with self.make_executor() as executor:
-
             c: ContextVar[int] = ContextVar("c")
 
             async def f(a: int) -> int:
@@ -257,7 +285,10 @@ class TestInit(BaseTestCase):
             ):
                 executor._lazy_init()
 
-    @skip_if_earlier_than_313
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported on ealier versions than 3.13",
+    )
     async def test_lazy_init_from_nonasyncio_if_inited(self) -> None:
         async with self.make_executor() as executor:
             executor._lazy_init()
@@ -268,8 +299,13 @@ class TestInit(BaseTestCase):
             self.assertEqual(
                 await asyncio.to_thread(f), asyncio.get_running_loop()
             )
-    
-    @skip_if_earlier_than_313("Bugs on Earlier versions of python")
+
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported"
+        " on ealier versions than 3.13"
+        "Bugs on Earlier versions of python",
+    )
     async def test_lazy_init_from_nonasyncio_if_not_inited(self) -> None:
         async with self.make_executor() as executor:
 
@@ -279,7 +315,9 @@ class TestInit(BaseTestCase):
             with self.assertRaisesRegex(RuntimeError, "no running event loop"):
                 await asyncio.to_thread(f)
 
-    @unittest.skipIf(sys.version_info < (3, 11), "don't have asyncio.Runner")
+    @unittest.skipIf(
+        sys.version_info < (3, 11), reason="don't have asyncio.Runner"
+    )
     async def test_lazy_init_bound_to_different_loop(self) -> None:
         async with self.make_executor() as executor:
             executor._lazy_init()
@@ -288,7 +326,7 @@ class TestInit(BaseTestCase):
                 executor._lazy_init()
 
             def f() -> None:
-                with asyncio.Runner() as runner:
+                with asyncio.Runner() as runner:  # type: ignore[attr-defined]
                     runner.run(g())
 
             with self.assertRaisesRegex(
@@ -307,7 +345,10 @@ class TestShutdown(BaseTestCase):
         await executor.shutdown()
         await executor.shutdown()
 
-    @skip_if_earlier_than_313
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported on ealier versions than 3.13",
+    )
     async def test_shutdown_cancel_futures(self) -> None:
         executor = self.make_executor(1)
         started = asyncio.Event()
@@ -350,13 +391,16 @@ class TestShutdown(BaseTestCase):
 
         self.assertTrue(fut.cancelled())
 
-    @skip_if_earlier_than_313
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported on ealier versions than 3.13",
+    )
     async def test_shutdown_wt_exception_from_worker(self) -> None:
         executor = self.make_executor()
         executor._lazy_init()
 
         # emulate unhandled error by putting bad data into the queue
-        await executor._work_items.put(None)  # type: ignore[arg-type]
+        await executor._work_items.put(None)
 
         ok = False
         try:
@@ -382,18 +426,21 @@ class TestCancellation(BaseTestCase):
                 raise
 
         fut = await executor.submit(f())
+        assert executor._tasks
         await started.wait()
 
         fut.cancel()
         await cancelled.wait()
 
-    @skip_if_earlier_than_313
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported on ealier versions than 3.13",
+    )
     async def test_cancelling_map_cancels_tasks(self) -> None:
         async with self.make_executor() as executor:
-
             cancelled = set()
             ev = asyncio.Event()
-    
+
             async def f(i: int) -> None:
                 try:
                     await asyncio.sleep(60)
@@ -402,19 +449,21 @@ class TestCancellation(BaseTestCase):
                     if len(cancelled) == 5:
                         ev.set()
                     raise
-                
+
             with self.assertRaises(TimeoutError):
                 async with timeout(0.01):
                     async for _ in executor.map(f, range(5)):
                         pass
-                    
+
             await ev.wait()
             self.assertEqual(cancelled, {0, 1, 2, 3, 4})
-    
+
 
 class TestExceptions(BaseTestCase):
-
-    @skip_if_earlier_than_313
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported on ealier versions than 3.13",
+    )
     async def test_dont_execute_with_done_future(self) -> None:
         async with self.make_executor(1) as executor:
             started = asyncio.Event()
@@ -445,7 +494,10 @@ class TestExceptions(BaseTestCase):
             self.assertEqual(await fut1, 1)
             self.assertEqual(await fut2, 10)
 
-    @unittest.skipIf(sys.version_info <= (3, 13), "Currently chokes ealier versions of python")
+    @unittest.skipIf(
+        sys.version_info <= (3, 13),
+        "Currently chokes ealier versions of python",
+    )
     async def test_dont_override_done_future(self) -> None:
         async with self.make_executor() as executor:
             started = asyncio.Event()
@@ -511,8 +563,16 @@ class TestTaskNames(BaseTestCase):
                 executor._tasks[0].get_name(), r"Executor-(\d+)_(\d+)"
             )
 
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported"
+        " on ealier versions than 3.13 Regex doesn't format correclty"
+        " in earlier versions of python"
+        " [TestTaskNames.test_submit_name.<locals>.f]",
+    )
     async def test_submit_name(self) -> None:
         async with self.make_executor() as executor:
+
             async def f() -> str:
                 task = asyncio.current_task()
                 assert task is not None
@@ -521,6 +581,13 @@ class TestTaskNames(BaseTestCase):
             ret = await (await executor.submit(f()))
             self.assertRegex(ret, rf"Executor-(\d+)_(\d+)\[{f.__qualname__}\]")
 
+    @unittest.skipIf(
+        sys.version_info < (3, 13),
+        reason="Not supported"
+        " on ealier versions than 3.13"
+        r"Regex doesn't format correclty in earlier versions of python"
+        " [TestTaskNames.test_custom_name.<locals>.f\\]",
+    )
     async def test_custom_name(self) -> None:
         async with self.make_executor(task_name_prefix="custom") as executor:
 

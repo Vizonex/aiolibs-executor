@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextvars
-import dataclasses
 import itertools
 import sys
 import threading
@@ -25,35 +24,36 @@ from typing import Any, Generic, TypeVar, final, overload
 from warnings import catch_warnings
 
 
+if sys.version_info < (3, 13):
+    from backports.asyncio.queues import (  # type: ignore[import-untyped]
+        Queue,
+        QueueShutDown,
+    )
+else:
+    from asyncio.queues import Queue, QueueShutDown
+
 if sys.version_info < (3, 10):
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Sequence
     from typing import Protocol
-    
+
     _T = TypeVar("_T")
+
     class _SupportsAnext(Protocol[_T]):
         async def __anext__(self) -> _T:
             pass
 
-    async def anext(it: _SupportsAnext[_T]):
-        return await it.__anext__()
-    
+    def anext(it: _SupportsAnext[_T]) -> Awaitable:
+        return it.__anext__()
+
     def aiter(it: Sequence[_T]) -> AsyncIterable[_T]:
         return it.__aiter__()
-    
+
 
 if sys.version_info < (3, 11):
     from exceptiongroup import BaseExceptionGroup
     from typing_extensions import Self
 else:
     from typing import Self
-
-if sys.version_info >= (3, 13):
-    from asyncio import Queue, QueueShutDown
-else:
-    # XXX: Older versions of asyncio's Queue object
-    # Do not use QueueShutdown so a workaround was
-    # required to mimic the newer Queue's behavior
-    from ._queue_backport import Queue, QueueShutDown
 
 
 R = TypeVar("R")
@@ -292,6 +292,7 @@ class Executor:
         self._shutdown = True
         if self._loop is None:
             return
+
         if cancel_futures:
             # Drain all work items from the queue, and then cancel their
             # associated futures.
@@ -299,6 +300,7 @@ class Executor:
                 self._work_items.get_nowait().cancel()
 
         self._work_items.shutdown()
+
         if not wait:
             for task in self._tasks:
                 task.cancel()
@@ -356,11 +358,23 @@ class Executor:
         self, work_items: list[_WorkItem[R]]
     ) -> AsyncIterator[R]:
         try:
-            # reverse to keep finishing order
-            work_items.reverse()
-            while work_items:
-                # Careful not to keep a reference to the popped future
-                yield await work_items.pop().future
+            # NOTE: Polling future objects can be a bad apporch
+
+            remaining = len(work_items)
+            queue: Queue[Future[R]] = Queue()
+
+            def on_done(fut: Future[R]) -> None:
+                nonlocal queue, remaining
+                queue.put_nowait(fut)
+                remaining -= 1
+
+            for w in work_items.copy():
+                w.future.add_done_callback(on_done)
+
+            while remaining or not queue.empty():
+                fut = await queue.get()
+                yield await fut
+
         except CancelledError:
             # The current task was cancelled, e.g. by timeout
             for work_item in work_items:
@@ -370,7 +384,8 @@ class Executor:
     async def _work(self, prefix: str) -> None:
         try:
             while True:
-                await (await self._work_items.get()).execute(prefix)
+                worker = await self._work_items.get()
+                await worker.execute(prefix)
         except QueueShutDown:
             pass
 
@@ -378,14 +393,26 @@ class Executor:
 _global_lock = threading.Lock()
 
 
-@dataclasses.dataclass
 class _WorkItem(Generic[R]):
-    coro: Coroutine[Any, Any, R]
-    loop: AbstractEventLoop
-    context: contextvars.Context | None
-    task: Task[R] | None = None
+    __slots__ = (
+        "coro",
+        "loop",
+        "context",
+        "task",
+        "future",
+    )
 
-    def __post_init__(self) -> None:
+    def __init__(
+        self,
+        coro: Coroutine[Any, Any, R],
+        loop: AbstractEventLoop,
+        context: contextvars.Context | None,
+        task: Task[R] | None = None,
+    ) -> None:
+        self.coro = coro
+        self.loop = loop
+        self.context = context
+        self.task = task
         self.future: Future[R] = self.loop.create_future()
 
     async def execute(self, prefix: str) -> None:
@@ -400,9 +427,16 @@ class _WorkItem(Generic[R]):
             # Some custom coroutines and mocks could not have __qualname__,
             # don't add a suffix in this case.
             pass
-        self.task = task = self.loop.create_task(  # type: ignore[call-arg]
-            self.coro, context=self.context, name=name
-        )
+        if sys.version_info >= (3, 11):
+            self.task = task = self.loop.create_task(  # type: ignore[call-arg]
+                self.coro, context=self.context, name=name
+            )
+        # XXX: older versions of Python can't leverage context variables
+        # Not handling it and letting the bad arguments run results in 
+        # a deadlock!
+        else:
+            self.task = task = self.loop.create_task(self.coro, name=name)
+
         fut.add_done_callback(self.done_callback)
         try:
             ret = await task
@@ -416,8 +450,7 @@ class _WorkItem(Generic[R]):
                 fut.set_result(ret)
 
     def cancel(self) -> None:
-        fut = self.future
-        fut.cancel()
+        self.future.cancel()
         self.cleanup()
 
     def cleanup(self) -> None:
