@@ -10,8 +10,6 @@ from typing import Any, Callable
 from aiolibs_executor import Executor
 
 
-# TODO (Vizonex) add a requirements-dev.txt file for external
-# requirements for development and testing
 if sys.version_info < (3, 11):
     from async_timeout import timeout
 else:
