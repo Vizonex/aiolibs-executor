@@ -10,7 +10,7 @@ from typing import Any, Callable
 from aiolibs_executor import Executor
 
 
-# TODO (Vizonex) add a requirements-dev.txt file for external 
+# TODO (Vizonex) add a requirements-dev.txt file for external
 # requirements for development and testing
 if sys.version_info < (3, 11):
     from async_timeout import timeout
@@ -149,8 +149,6 @@ class TestSubmit(BaseTestCase):
             fut = await executor.submit(f(1))
             self.assertEqual(await fut, 2)
 
-    # @unittest.skipIf(sys.version_info < (3, 13), "Not supported"\
-    # " on ealier versions than 3.13""Eventloop Chokes itself to death")
     @skip_if_earlier_than_311(
         reason="Contextvar tasks are not supported on 3.11 or older"
     )
@@ -583,10 +581,8 @@ class TestTaskNames(BaseTestCase):
 
     @unittest.skipIf(
         sys.version_info < (3, 13),
-        reason="Not supported"
-        " on ealier versions than 3.13"
-        r"Regex doesn't format correclty in earlier versions of python"
-        " [TestTaskNames.test_custom_name.<locals>.f\\]",
+        reason=" Regex doesn't format correclty in earlier"
+        " versions of python [TestTaskNames.test_custom_name.<locals>.f\\]",
     )
     async def test_custom_name(self) -> None:
         async with self.make_executor(task_name_prefix="custom") as executor:

@@ -359,6 +359,8 @@ class Executor:
     ) -> AsyncIterator[R]:
         try:
             # NOTE: Polling future objects can be a bad apporch
+            # callbacks need to be used in order to return items
+            # in finishing order
 
             remaining = len(work_items)
             queue: Queue[Future[R]] = Queue()
@@ -368,12 +370,17 @@ class Executor:
                 queue.put_nowait(fut)
                 remaining -= 1
 
-            for w in work_items.copy():
+            # No need to call for a copy,
+            # loop will call it later
+            for w in work_items:
                 w.future.add_done_callback(on_done)
 
             while remaining or not queue.empty():
                 fut = await queue.get()
                 yield await fut
+
+            # cleanup
+            work_items.clear()
 
         except CancelledError:
             # The current task was cancelled, e.g. by timeout
@@ -432,7 +439,7 @@ class _WorkItem(Generic[R]):
                 self.coro, context=self.context, name=name
             )
         # XXX: older versions of Python can't leverage context variables
-        # Not handling it and letting the bad arguments run results in 
+        # Not handling it and letting the bad arguments run results in
         # a deadlock!
         else:
             self.task = task = self.loop.create_task(self.coro, name=name)
