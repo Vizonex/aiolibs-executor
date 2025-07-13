@@ -24,13 +24,10 @@ from typing import Any, Generic, TypeVar, final, overload
 from warnings import catch_warnings
 
 
-if sys.version_info < (3, 13):
-    from backports.asyncio.queues import (  # type: ignore[import-untyped]
-        Queue,
-        QueueShutDown,
-    )
-else:
-    from asyncio.queues import Queue, QueueShutDown
+# Use janus for now until aiologic is ready to implement QueueShutdown
+# SEE: https://github.com/x42005e1f/aiologic/issues/7
+
+from janus import Queue, QueueShutDown
 
 if sys.version_info < (3, 10):
     from collections.abc import Awaitable, Sequence
@@ -114,7 +111,7 @@ class Executor:
     ) -> Future[R]:
         loop = self._lazy_init()
         work_item = _WorkItem(coro, loop, context)
-        self._work_items.put_nowait(work_item)
+        self._work_items.async_q.put_nowait(work_item)
         return work_item.future
 
     async def submit(
@@ -126,7 +123,7 @@ class Executor:
     ) -> Future[R]:
         loop = self._lazy_init()
         work_item = _WorkItem(coro, loop, context)
-        await self._work_items.put(work_item)
+        await self._work_items.async_q.put(work_item)
         return work_item.future
 
     @overload
@@ -199,7 +196,7 @@ class Executor:
         work_items: list[_WorkItem[R]] = []
         for args in zip(iterable, *iterables, strict=False):
             work_item = _WorkItem(fn(*args), loop, context)
-            await self._work_items.put(work_item)
+            await self._work_items.async_q.put(work_item)
             work_items.append(work_item)
         async for ret in self._process_items(work_items):
             yield ret
@@ -274,7 +271,7 @@ class Executor:
             try:
                 args = [await anext(it) for it in its]
                 work_item = _WorkItem(fn(*args), loop, context)
-                await self._work_items.put(work_item)
+                await self._work_items.async_q.put(work_item)
                 work_items.append(work_item)
             except StopAsyncIteration:
                 break
@@ -297,7 +294,7 @@ class Executor:
             # Drain all work items from the queue, and then cancel their
             # associated futures.
             while not self._work_items.empty():
-                self._work_items.get_nowait().cancel()
+                self._work_items.async_q.get_nowait().cancel()
 
         self._work_items.shutdown()
 
@@ -367,7 +364,7 @@ class Executor:
 
             def on_done(fut: Future[R]) -> None:
                 nonlocal queue, remaining
-                queue.put_nowait(fut)
+                queue.async_q.put_nowait(fut)
                 remaining -= 1
 
             # No need to call for a copy,
@@ -375,8 +372,8 @@ class Executor:
             for w in work_items:
                 w.future.add_done_callback(on_done)
 
-            while remaining or not queue.empty():
-                fut = await queue.get()
+            while remaining or not queue.async_q.empty():
+                fut = await queue.async_q.get()
                 yield await fut
 
             # cleanup
@@ -391,7 +388,7 @@ class Executor:
     async def _work(self, prefix: str) -> None:
         try:
             while True:
-                worker = await self._work_items.get()
+                worker = await self._work_items.async_q.get()
                 await worker.execute(prefix)
         except QueueShutDown:
             pass
